@@ -23,55 +23,55 @@ RED='\e[31m'
 exec &>> >(tee -a /root/arch-install.log)
 
 usage() {
-	echo -e "Usage: $(basename $0) -d <disk> -e <encryption-password> -m <country code> -t <timezone> -h <hostname> -u <username> -p <password> -g <graphics-driver> -w <kde/gnome>"
-	echo -e "Options:"
-	echo -e "\t-d\tDisk to install Arch Linux on"
-	echo -e "\t-e\tEncryption password for the disk"
-	echo -e "\t-m\tCountry code for mirrorlist (e.g. US)"
-	echo -e "\t-t\tTimezone city (e.g. New_York)"
-	echo -e "\t-h\tHostname for the system"
-	echo -e "\t-u\tUsername for the system"
-	echo -e "\t-p\tPassword for the user"
-	echo -e "\t-g\tGraphics driver to install (e.g. nvidia)"
-	echo -e "\t-w\tDesktop environment to install (e.g. kde, gnome)"
-	echo -e "Example: $(basename $0) -d /dev/sda -e SecurePass123 -m US -t New_York -h archbox -u archuser -p SecureUserPass123 -g nvidia -w kde"
-	exit 1
+  echo -e "Usage: $(basename $0) -d <disk> -e <encryption-password> -m <country code> -t <timezone> -h <hostname> -u <username> -p <password> -g <graphics-driver> -w <kde/gnome>"
+  echo -e "Options:"
+  echo -e "\t-d\tDisk to install Arch Linux on"
+  echo -e "\t-e\tEncryption password for the disk"
+  echo -e "\t-m\tCountry code for mirrorlist (e.g. US)"
+  echo -e "\t-t\tTimezone city (e.g. New_York)"
+  echo -e "\t-h\tHostname for the system"
+  echo -e "\t-u\tUsername for the system"
+  echo -e "\t-p\tPassword for the user"
+  echo -e "\t-g\tGraphics driver to install (e.g. nvidia)"
+  echo -e "\t-w\tDesktop environment to install (e.g. kde, gnome)"
+  echo -e "Example: $(basename $0) -d /dev/sda -e SecurePass123 -m US -t New_York -h archbox -u archuser -p SecureUserPass123 -g nvidia -w kde"
+  exit 1
 }
 
 while getopts "d:e:m:t:h:u:p:g:w:" opt; do
-	case $opt in
-	d) installDisk=$OPTARG ;;
-	e) encryptionPassword=$OPTARG ;;
-	m) mirrorlistCountry=$OPTARG ;;
-	t) timezoneCity=$OPTARG ;;
-	h) hostname=$OPTARG ;;
-	u) username=$OPTARG ;;
-	p) userPassword=$OPTARG ;;
-	g) graphicsDriver=$OPTARG ;;
-	w) desktopEnvironment=$OPTARG ;;
-	\?) usage ;;
-	:) usage ;;
-	esac
+  case $opt in
+  d) installDisk=$OPTARG ;;
+  e) encryptionPassword=$OPTARG ;;
+  m) mirrorlistCountry=$OPTARG ;;
+  t) timezoneCity=$OPTARG ;;
+  h) hostname=$OPTARG ;;
+  u) username=$OPTARG ;;
+  p) userPassword=$OPTARG ;;
+  g) graphicsDriver=$OPTARG ;;
+  w) desktopEnvironment=$OPTARG ;;
+  \?) usage ;;
+  :) usage ;;
+  esac
 done
 
 if [[ -z $installDisk || -z $encryptionPassword || -z $mirrorlistCountry || -z $timezoneCity || -z $hostname || -z $username || -z $userPassword || -z $desktopEnvironment ]]; then
-	echo -e "${RED}[ERROR] -- Missing required arguments${NC}"
-	usage
+  echo -e "${RED}[ERROR] -- Missing required arguments${NC}"
+  usage
 fi
 
 if [[ $EUID -ne 0 ]]; then
-	echo "${RED}[ERROR] -- This script must be run as root${NC}"
-	exit 1
+  echo "${RED}[ERROR] -- This script must be run as root${NC}"
+  exit 1
 fi
 
 if [[ ! -f /sys/firmware/efi/fw_platform_size ]]; then
-	echo "${RED}[ERROR] -- Legacy system detected, exiting...${NC}"
-	exit 1
+  echo "${RED}[ERROR] -- Legacy system detected, exiting...${NC}"
+  exit 1
 fi
 
 if ! timedatectl list-timezones | grep -qi $timezoneCity; then
-	echo "${RED}[ERROR] -- Timezone city $timezoneCity not found${NC}"
-	exit 1
+  echo "${RED}[ERROR] -- Timezone city $timezoneCity not found${NC}"
+  exit 1
 fi
 
 echo -e "\n[INFO] -- Enabling NTP..."
@@ -80,8 +80,8 @@ timedatectl set-ntp true
 echo -e "${YELLOW}[WARNING] -- This script will erase all data on $installDisk. Do you want to continue? (y/n)${NC}"
 read -r answer
 if [[ $answer == "n" ]]; then
-	echo "Exiting..."
-	exit 0
+  echo "Exiting..."
+  exit 0
 fi
 
 echo -e "\n[INFO] -- Partitioning $installDisk..."
@@ -90,11 +90,11 @@ echo -e "n\n\n\n+1G\nn\n\n\n\nt\n1\n1\nw\n" | fdisk $installDisk
 
 echo -e "\n[INFO] -- Creating boot partition..."
 if [[ $installDisk == "/dev/nvme"* ]]; then
-	bootPartition="${installDisk}p1"
-	rootPartition="${installDisk}p2"
+  bootPartition="${installDisk}p1"
+  rootPartition="${installDisk}p2"
 else
-	bootPartition="${installDisk}1"
-	rootPartition="${installDisk}2"
+  bootPartition="${installDisk}1"
+  rootPartition="${installDisk}2"
 fi
 mkfs.fat -F32 $bootPartition
 
@@ -130,11 +130,11 @@ swapon /mnt/swap/swapfile
 echo -e "\n[INFO] -- Check CPU vendor..."
 cpuVendor=$(lscpu | grep -i vendor | awk 'NR==1 {print $3}')
 if [[ $cpuVendor == "AuthenticAMD" ]]; then
-	echo -e "\n[INFO] -- AMD CPU detected, installing amd-ucode..."
-	ucodePackage="amd-ucode"
+  echo -e "\n[INFO] -- AMD CPU detected, installing amd-ucode..."
+  ucodePackage="amd-ucode"
 elif [[ $cpuVendor == "GenuineIntel" ]]; then
-	echo -e "\n[INFO] -- Intel CPU detected, installing intel-ucode..."
-	ucodePackage="intel-ucode"
+  echo -e "\n[INFO] -- Intel CPU detected, installing intel-ucode..."
+  ucodePackage="intel-ucode"
 fi
 
 echo -e "\n[INFO] -- Installing base system..."
@@ -201,7 +201,7 @@ arch-chroot /mnt /bin/bash -- <<EOT
     reflector --country $mirrorlistCountry --latest 10 --fastest 5 --protocol http,https --sort rate --save /etc/pacman.d/mirrorlist
 
     echo -e "\n[INFO] -- Installing base tools..."
-		pacman -S --noconfirm alacritty android-tools bash-completion bat bitwarden chromium curl dosfstools dust efibootmgr exfatprogs fd firefox fwupd fzf lazygit markdownlint net-tools nfs-utils nodejs npm ntfs-3g nushell neovim otf-firamono-nerd p7zip pkgfile podman podman-compose procs ripgrep sd starship thunderbird tokei ttf-firacode-nerd unrar unzip wget wl-clipboard zoxide $graphicsDriver
+		pacman -S --noconfirm alacritty android-tools bash-completion bat bitwarden chromium curl deluge-gtk dosfstools dust efibootmgr exfatprogs fd firefox fwupd fzf lazygit libreoffice-fresh markdownlint net-tools nfs-utils nodejs npm ntfs-3g nushell neovim otf-firamono-nerd p7zip pkgfile podman podman-compose procs ripgrep sd starship thunderbird tokei ttf-firacode-nerd unrar unzip wget wl-clipboard zoxide xournalpp $graphicsDriver 
 
     echo -e "\n[INFO] -- Installing LazyVim..."
     sudo -u $username /bin/bash -e -- <<-EOF
@@ -231,7 +231,7 @@ EOF
 
 if [[ $desktopEnvironment == "kde" ]]; then
     echo -e "\n[INFO] -- Installing KDE..."
-    pacman -S --noconfirm plasma dolphin libdbusmenu-glib libblockdev-btrfs power-profiles-daemon udisks2-btrfs kdeconnect okular ark python-pipx
+    pacman -S --noconfirm ark dolphin gwnview kate kcalc kdeconnect libblockdev-btrfs libdbusmenu-glib okular plasma power-profiles-daemon python-pipx spectacle udisks2-btrfs
     usermod -aG i2c $username
     cp /usr/share/ddcutil/data/60-ddcutil-i2c.rules /etc/udev/rules.d/
 # TODO automate upgrade of plasmoids

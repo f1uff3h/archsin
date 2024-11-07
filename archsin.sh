@@ -1,4 +1,5 @@
 #!/bin/bash
+set -Eeuo pipefail
 #############################################################################################################################
 #
 #                           █████╗ ██████╗  ██████╗██╗  ██╗    ██╗     ██╗███╗   ██╗██╗   ██╗██╗  ██╗
@@ -16,14 +17,13 @@
 #
 #############################################################################################################################
 
-NC='\e[0m'
-YELLOW='\e[33m'
-RED='\e[31m'
+source <(curl -s https://codeberg.org/f1uff3h/scripts/raw/branch/main/bash_handlers.sh)
 
-exec &>> >(tee -a /root/arch-install.log)
+handle_log
+handle_root
 
 usage() {
-  echo -e "Usage: $(basename $0) -d <disk> -e <encryption-password> -m <country code> -t <timezone> -h <hostname> -u <username> -p <password> -g <graphics-driver> -w <kde/gnome>"
+  echo -e "Usage: $(basename "${0}") -d <disk> -e <encryption-password> -m <country code> -t <timezone> -h <hostname> -u <username> -p <password> -g <graphics-driver> -w <kde/gnome>"
   echo -e "Options:"
   echo -e "\t-d\tDisk to install Arch Linux on"
   echo -e "\t-e\tEncryption password for the disk"
@@ -34,8 +34,7 @@ usage() {
   echo -e "\t-p\tPassword for the user"
   echo -e "\t-g\tGraphics driver to install (e.g. nvidia)"
   echo -e "\t-w\tDesktop environment to install (e.g. kde, gnome)"
-  echo -e "Example: $(basename $0) -d /dev/sda -e SecurePass123 -m US -t New_York -h archbox -u archuser -p SecureUserPass123 -g nvidia -w kde"
-  exit 1
+  echo -e "Example: $(basename "${0}") -d /dev/sda -e SecurePass123 -m US -t New_York -h archbox -u archuser -p SecureUserPass123 -g nvidia -w kde"
 }
 
 while getopts "d:e:m:t:h:u:p:g:w:" opt; do
@@ -49,46 +48,46 @@ while getopts "d:e:m:t:h:u:p:g:w:" opt; do
   p) userPassword=$OPTARG ;;
   g) graphicsDriver=$OPTARG ;;
   w) desktopEnvironment=$OPTARG ;;
-  \?) usage ;;
-  :) usage ;;
+  \?)
+    usage
+    exit 1
+    ;;
+  :)
+    usage
+    exit 1
+    ;;
   esac
 done
 
+# TODO: update to for loop so you can say exactly which arguments are missing
 if [[ -z $installDisk || -z $encryptionPassword || -z $mirrorlistCountry || -z $timezoneCity || -z $hostname || -z $username || -z $userPassword || -z $desktopEnvironment ]]; then
-  echo -e "${RED}[ERROR] -- Missing required arguments${NC}"
   usage
-fi
-
-if [[ $EUID -ne 0 ]]; then
-  echo "${RED}[ERROR] -- This script must be run as root${NC}"
-  exit 1
+  log error "Missing required arguments"
 fi
 
 if [[ ! -f /sys/firmware/efi/fw_platform_size ]]; then
-  echo "${RED}[ERROR] -- Legacy system detected, exiting...${NC}"
-  exit 1
+  log error "Legacy system detected, exiting"
 fi
 
-if ! timedatectl list-timezones | grep -qi $timezoneCity; then
-  echo "${RED}[ERROR] -- Timezone city $timezoneCity not found${NC}"
-  exit 1
+if ! timedatectl list-timezones | grep -qi "${timezoneCity}"; then
+  log error "Timezone city ${timezoneCity} not found"
 fi
 
-echo -e "\n[INFO] -- Enabling NTP..."
+log info "Enabling NTP"
 timedatectl set-ntp true
 
-echo -e "${YELLOW}[WARNING] -- This script will erase all data on $installDisk. Do you want to continue? (y/n)${NC}"
+log warning "This script will erase all data on ${installDisk}. Do you want to continue? (y/n)"
 read -r answer
-if [[ $answer == "n" ]]; then
-  echo "Exiting..."
+if [[ "${answer}" == "n" ]]; then
+  log info "Anwered no, exiting"
   exit 0
 fi
 
-echo -e "\n[INFO] -- Partitioning $installDisk..."
-echo -e "g\nw\n" | fdisk $installDisk
-echo -e "n\n\n\n+1G\nn\n\n\n\nt\n1\n1\nw\n" | fdisk $installDisk
+log info "Partitioning ${installDisk}"
+echo -e "g\nw\n" | fdisk "${installDisk}"
+echo -e "n\n\n\n+1G\nn\n\n\n\nt\n1\n1\nw\n" | fdisk "${installDisk}"
 
-echo -e "\n[INFO] -- Creating boot partition..."
+log info "Creating boot partition"
 if [[ $installDisk == "/dev/nvme"* ]]; then
   bootPartition="${installDisk}p1"
   rootPartition="${installDisk}p2"
@@ -96,13 +95,13 @@ else
   bootPartition="${installDisk}1"
   rootPartition="${installDisk}2"
 fi
-mkfs.fat -F32 $bootPartition
+mkfs.fat -F32 "${bootPartition}"
 
-echo -e "\n[INFO] -- Encrypting partition ${rootPartition}..."
-echo -n $encryptionPassword | cryptsetup luksFormat --type luks2 $rootPartition
-echo -n $encryptionPassword | cryptsetup open --type=luks2 $rootPartition root
+log info "Encrypting partition ${rootPartition}"
+echo -n "${encryptionPassword}" | cryptsetup luksFormat --type luks2 "${rootPartition}"
+echo -n "${encryptionPassword}" | cryptsetup open --type=luks2 "${rootPartition}" root
 
-echo -e "\n[INFO] -- BTRFS setup..."
+log info "BTRFS setup"
 mkfs.btrfs /dev/mapper/root
 mount /dev/mapper/root /mnt
 btrfs su cr /mnt/@
@@ -113,7 +112,7 @@ btrfs su cr /mnt/@snapshots
 btrfs su cr /mnt/@swap
 umount /mnt
 
-echo -e "\n[INFO] -- Mounting filesystems..."
+log info "Mounting filesystems"
 mount -o rw,noatime,compress=zstd,space_cache=v2,subvol=@ /dev/mapper/root /mnt
 mkdir -p /mnt/{boot,var,tmp,home,.snapshots,swap}
 mount -o rw,noatime,compress=zstd,space_cache=v2,subvol=@home /dev/mapper/root /mnt/home
@@ -121,151 +120,128 @@ mount -o rw,noatime,compress=zstd,space_cache=v2,subvol=@snapshots /dev/mapper/r
 mount -o rw,noatime,compress=zstd,space_cache=v2,subvol=@tmp /dev/mapper/root /mnt/tmp
 mount -o rw,noatime,nodatacow,compress=zstd,space_cache=v2,subvol=@var /dev/mapper/root /mnt/var
 mount -o rw,noatime,nodatacow,compress=zstd,space_cache=v2,subvol=@swap /dev/mapper/root /mnt/swap
-mount $bootPartition /mnt/boot
+mount "${bootPartition}" /mnt/boot
 
-echo -e "\n[INFO] -- Enabling swap..."
+log info "Enabling swap"
 btrfs filesystem mkswapfile --size 8G --uuid clear /mnt/swap/swapfile
-swapon /mnt/swap/swapfile
+swapon "${_}"
 
-echo -e "\n[INFO] -- Check CPU vendor..."
+log info "Check CPU vendor"
 cpuVendor=$(lscpu | grep -i vendor | awk 'NR==1 {print $3}')
-if [[ $cpuVendor == "AuthenticAMD" ]]; then
-  echo -e "\n[INFO] -- AMD CPU detected, installing amd-ucode..."
+if [[ "${cpuVendor}" == "AuthenticAMD" ]]; then
+  #TODO: update this with appropriate AMD drivers
+  log info "AMD CPU detected, installing amd-ucode"
   ucodePackage="amd-ucode"
-elif [[ $cpuVendor == "GenuineIntel" ]]; then
-  echo -e "\n[INFO] -- Intel CPU detected, installing intel-ucode..."
+elif [[ "${cpuVendor}" == "GenuineIntel" ]]; then
+  log info "Intel CPU detected, intel-ucode, mesa and intel-media-driver will be installed"
   ucodePackage="intel-ucode"
+  cpuSpecificPackages="${ucodePackage} intel-media-driver mesa vulkan-intel"
 fi
 
-echo -e "\n[INFO] -- Installing base system..."
-pacstrap /mnt base base-devel btrfs-progs linux linux-firmware $ucodePackage git vim networkmanager man-pages man-db firewalld rsync
+log info "Installing base system"
+pacstrap /mnt base base-devel btrfs-progs linux linux-firmware git vim networkmanager man-pages man-db firewalld rsync "${cpuSpecificPackages}"
 
 genfstab -U /mnt >>/mnt/etc/fstab
-sed -i 's/fmask=0022,dmask=0022/fmask=0077,dmask=0077/' /mnt/etc/fstab
-echo -e "/swap/swapfile none swap defaults 0 0" >>/mnt/etc/fstab
+sed -i 's/fmask=0022,dmask=0022/fmask=0077,dmask=0077/' "${_}"
+echo -e "/swap/swapfile none swap defaults 0 0" >>"${_}"
 
-arch-chroot /mnt /bin/bash -- <<EOT
-    exec &>> >(tee -a /var/log/arch-install-chroot.log)
+arch-chroot /mnt /bin/bash -- <<-EOT
+	set -Eeuo pipefail
+	source <(curl -s https://codeberg.org/f1uff3h/scripts/raw/branch/main/bash_handlers.sh)
 
-    set -e
+	handle_log
 
-    echo -e "\n[INFO] -- Configuring timezone..."
-    ln -sf /usr/share/zoneinfo/$timezoneCity /etc/localtime
-    hwclock --systohc
+	log info "Configuring timezone"
+	ln -sf "/usr/share/zoneinfo/${timezoneCity}" /etc/localtime
+	hwclock --systohc
 
-    echo -e "\n[INFO] -- Configuring locale..."
-    sed -i 's/#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
-    echo "C.UTF-8 UTF-8" >> /etc/locale.gen
-    locale-gen
-    echo -e "LANG=en_US.UTF-8"> /etc/locale.conf
+	log info "Configuring locale"
+	sed -i 's/#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+	locale-gen
+	echo -e "LANG=en_US.UTF-8"> /etc/locale.conf
+	sed -i 's/\(.*LANG:-\).*}/\1en_US.UTF8}/' /etc/profile.d/locale.sh
 
-    echo -e "\n[INFO] -- Configuring hostname..."
-    echo "$hostname" > /etc/hostname
+	log info "Configuring hostname"
+	echo "${hostname}" > /etc/hostname
 
-    echo -e "\n[INFO] -- Configuring hosts file..."
-    echo -e "127.0.0.1\tlocalhost\n::1\t\tlocalhost\n127.0.1.1\t$hostname.localdomain\t$hostname" > /etc/hosts
+	log info "Configuring hosts file"
+	echo -e "127.0.0.1\tlocalhost\n::1\t\tlocalhost\n127.0.1.1\t${hostname}.localdomain\t${hostname}" > /etc/hosts
 
-    echo -e "\n[INFO] -- Configuring initramfs..."
-    sed -i 's/^HOOKS.*/HOOKS=(base udev autodetect microcode modconf kms keyboard keymap consolefont block encrypt btrfs filesystems fsck resume)/' /etc/mkinitcpio.conf
-    sed -i 's/^MODULES.*/MODULES=(btrfs)/' /etc/mkinitcpio.conf
-    sed -i 's/^BINARIES.*/BINARIES=(btrfs)/' /etc/mkinitcpio.conf
-    mkinitcpio -P
+	log info "Configuring initramfs"
+	sed -i 's/^HOOKS.*/HOOKS=(base udev autodetect microcode modconf kms keyboard keymap consolefont block encrypt btrfs filesystems fsck resume)/' /etc/mkinitcpio.conf
+	sed -i 's/^MODULES.*/MODULES=(btrfs)/' /etc/mkinitcpio.conf
+	sed -i 's/^BINARIES.*/BINARIES=(btrfs)/' /etc/mkinitcpio.conf
+	mkinitcpio -P
 
-    echo -e "\n[INFO] -- Configuring user $username..."
-    useradd -m -G wheel -s /bin/bash $username
-    echo -e "$userPassword\n$userPassword" | passwd $username
-    sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
+	log info "Configuring user ${username}"
+	useradd -m -G wheel -s /bin/bash ${username}
+	echo -e "${userPassword}\n${userPassword}" | passwd ${username}
+	sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
 
-    echo -e "\n[INFO] -- Installing systemd-boot..."
-    bootctl --path=/boot/ install
+	log info "Installing systemd-boot"
+	bootctl --path=/boot/ install
 
-    echo -e "\n[INFO] -- Configuring systemd-boot..."
-    mkdir -p /boot/loader/entries
-    echo -e "default arch.conf\ntimeout 4\neditor no" > /boot/loader/loader.conf
+	log info "Configuring systemd-boot"
+	mkdir -p /boot/loader/entries
+	echo -e "default arch.conf\ntimeout 4\neditor no" > /boot/loader/loader.conf
 
-    echo -e "\n[INFO] -- Configuring systemd-boot default entry..."
-    echo -e "title Arch Linux\nlinux /vmlinuz-linux\ninitrd /$ucodePackage.img\ninitrd /initramfs-linux.img\noptions cryptdevice=UUID=$(blkid -s UUID -o value $rootPartition):root root=/dev/mapper/root rootflags=subvol=@ rw" > /boot/loader/entries/arch.conf
+	log info "Configuring systemd-boot default entry"
+	echo -e "title Arch Linux\nlinux /vmlinuz-linux\ninitrd /${ucodePackage}.img\ninitrd /initramfs-linux.img\noptions cryptdevice=UUID=$(blkid -s UUID -o value "${rootPartition}"):root root=/dev/mapper/root rootflags=subvol=@ rw" > /boot/loader/entries/arch.conf
 
-    echo -e "\n[INFO] -- Setting suspend then hibernate delay to 2 hours..."
-    sed -i 's/#HibernateDelaySec.*/HibernateDelaySec=7200/' /etc/systemd/sleep.conf
+	log info "Setting suspend then hibernate delay to 2 hours"
+	sed -i 's/#HibernateDelaySec.*/HibernateDelaySec=7200/' /etc/systemd/sleep.conf
 
-    echo -e "\n[INFO] -- Enabling services..."
-    systemctl enable NetworkManager
-    systemctl enable fstrim.timer
-    systemctl enable firewalld
+	log info "Enabling services"
+	systemctl enable NetworkManager
+	systemctl enable fstrim.timer
+	systemctl enable firewalld
 
-    echo -e "\n[INFO] -- Tune pacman..."
-    sed -i 's/^#Color/Color/' /etc/pacman.conf
-    sed -i 's/^#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
-    pacman -Syy --noconfirm reflector
-    reflector --country $mirrorlistCountry --latest 10 --fastest 5 --protocol http,https --sort rate --save /etc/pacman.d/mirrorlist
+	log info "Tuneing pacman"
+	sed -i 's/^#Color/Color/' /etc/pacman.conf
+	sed -i 's/^#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
+	pacman -Syy --noconfirm reflector
+	reflector --country ${mirrorlistCountry} --latest 10 --fastest 5 --protocol http,https --sort rate --save /etc/pacman.d/mirrorlist
 
-    echo -e "\n[INFO] -- Installing base tools..."
-		pacman -S --noconfirm alacritty android-tools bash-completion bat bitwarden chromium curl deluge-gtk dosfstools dust efibootmgr exfatprogs fd firefox fwupd fzf lazygit libreoffice-fresh markdownlint net-tools nfs-utils nodejs npm ntfs-3g nushell neovim otf-firamono-nerd p7zip pkgfile podman podman-compose procs ripgrep sd starship thunderbird tokei ttf-firacode-nerd unrar unzip wget wl-clipboard zoxide xournalpp $graphicsDriver 
+	log info "Installing base tools"
+	pacman -S --noconfirm alacritty alsa-utils android-tools bash-completion bat bind curl dosfstools dust efibootmgr exfatprogs fd fwupd fzf inter-font lan-mouse lazygit libreoffice-fresh markdownlint mpv neovim net-tools nfs-utils nmap nodejs npm ntfs-3g nushell otf-firamono-nerd p7zip pkgfile podman podman-compose procs ripgrep sd starship tokei unrar unzip wacomtablet wget wl-clipboard zoxide ${graphicsDriver}
 
-    echo -e "\n[INFO] -- Installing LazyVim..."
-    sudo -u $username /bin/bash -e -- <<-EOF
-			rm -rf ~/.config/nvim ~/.local/share/nvim ~/.local/state/nvim ~/.cache/nvim 2> /dev/null
-			git clone https://github.com/LazyVim/starter ~/.config/nvim
-			rm -rf ~/.config/nvim/.git
+	log info "Installing LazyVim"
+	sudo -u "${username}" /bin/bash -e -- <<-EOF
+		rm -rf ~/.config/nvim ~/.local/share/nvim ~/.local/state/nvim ~/.cache/nvim 2> /dev/null
+		git clone https://github.com/LazyVim/starter ~/.config/nvim
+		rm -rf ~/.config/nvim/.git
 EOF
 
-    echo -e "\n[INFO] -- Installing catppuccin alacritty themes..."
-    sudo -u $username /bin/bash -e -- <<-EOF
-			mkdir -p ~/.config/alacritty/
-			curl -LO --output-dir ~/.config/alacritty https://github.com/catppuccin/alacritty/raw/main/catppuccin-mocha.toml
-			curl -LO --output-dir ~/.config/alacritty https://github.com/catppuccin/alacritty/raw/main/catppuccin-latte.toml
+	log info "Installing catppuccin alacritty themes"
+	sudo -u "${username}" /bin/bash -e -- <<-EOF
+		mkdir -p ~/.config/alacritty/
+		curl -LO --output-dir ~/.config/alacritty https://github.com/catppuccin/alacritty/raw/main/catppuccin-mocha.toml
+		curl -LO --output-dir ~/.config/alacritty https://github.com/catppuccin/alacritty/raw/main/catppuccin-latte.toml
 EOF
 
-    echo -e "\n[INFO] -- Installing paru..."
-    echo "$username ALL=(ALL) NOPASSWD: /usr/bin/pacman" >> /etc/sudoers
-    sudo -u $username /bin/bash -e -- <<-EOF
-			mkdir -p ~/bin
-			git clone https://aur.archlinux.org/paru.git ~/bin/paru
-			pushd ~/bin/paru
-			makepkg -si --noconfirm
+	log info "Installing paru"
+	echo "${username} ALL=(ALL) NOPASSWD: /usr/bin/pacman" >> /etc/sudoers
+	sudo -u "${username}" /bin/bash -e -- <<-EOF
+		mkdir -p ~/bin
+		git clone https://aur.archlinux.org/paru.git ~/bin/paru
+		pushd ~/bin/paru
+		makepkg -si --noconfirm
 EOF
 
-    echo -e "\n[INFO] -- Installing AUR packages..."
-    sudo -u $username paru -S --noconfirm brave-bin freetube-bin localsend-bin waterfox-bin
+	log info "Installing flatpaks"
+	sudo -u "${username}" flatpak install com.bitwarden.desktop com.brave.Browser org.deluge_torrent.deluge org.kde.digikam io.freetubeapp.FreeTube org.gimp.GIMP org.localsend.localsend_app org.mozilla.Thunderbird com.rustdesk.RustDesk net.waterfox.waterfox
 
-if [[ $desktopEnvironment == "kde" ]]; then
-    echo -e "\n[INFO] -- Installing KDE..."
-    pacman -S --noconfirm ark dolphin gwnview kate kcalc kdeconnect libblockdev-btrfs libdbusmenu-glib okular plasma power-profiles-daemon python-pipx spectacle udisks2-btrfs
-    usermod -aG i2c $username
-    cp /usr/share/ddcutil/data/60-ddcutil-i2c.rules /etc/udev/rules.d/
-# TODO automate upgrade of plasmoids
-    sudo -u $username /bin/bash -e -- <<-EOF
-      pushd \$HOME
-			paru -S --noconfirm plasma6-applets-window-title
-      mkdir -p ~/.plasmoids-git
-      pushd ~/.plasmoids-git
-      git clone https://github.com/boraerciyas/kde_controlcentre
-      git clone https://github.com/DenysMb/ChatAI-Plasmoid.git
-      git clone https://github.com/samirgaire10/com.samirgaire10.perplexityAi-plasma6.git
-      git clone https://github.com/prayag2/kde_modernclock
-      git clone https://github.com/davidhi7/ddcci-plasmoid.git
-      cd kde_controlcentre
-      kpackagetool6 -i package/
-      cp -r \$HOME/.local/share/kpackage/generic/com.github.boraerciyas.controlcentre/ \$HOME/.local/share/plasma/plasmoids/
-      cd ../ChatAI-Plasmoid
-      kpackagetool6 -i ./
-      cp -r \$HOME/.local/share/kpackage/generic/ChatAI-Plasmoid/ \$HOME/.local/share/plasma/plasmoids/
-      cd ../com.samirgaire10.perplexityAi-plasma6
-      kpackagetool6 -i ./
-      cp -r \$HOME/.local/share/kpackage/generic/com.samirgaire10.perplexityAi-plasma6/ \$HOME/.local/share/plasma/plasmoids/
-      cd ../kde_modernclock
-      kpackagetool6 -i ./package
-      cp -r \$HOME/.local/share/kpackage/generic/com.github.prayag2.kde_modernclock/ \$HOME/.local/share/plasma/plasmoids/
-      cd ../ddcci-plasmoid
-      pipx install ddcci-plasmoid-backend
-      pipx ensurepath
-      kpackagetool6 -i ./plasmoid
-      cp -r \$HOME/.local/share/kpackage/generic/com.github.davidhi7.ddcci-plasmoid/ \$HOME/.local/share/plasma/plasmoids/
-EOF
-    systemctl enable sddm
-    mkdir -p /etc/sddm.conf.d
-    cat <<-EOF > /etc/sddm.conf.d/kde_settings.conf
+if [[ "${desktopEnvironment}" == "kde" ]]; then
+	log info "Installing KDE"
+	pacman -S --noconfirm ark dolphin gwnview kate kcalc kdeconnect libblockdev-btrfs libdbusmenu-glib okular plasma power-profiles-daemon python-pipx spectacle udisks2-btrfs
+
+	log info "Installing Plasma applets"
+	paru -S plasma6-applets-fokus plasma6-applets-window-buttons plasma6-applets-window-title
+
+  log info "Configuring sddm"
+	systemctl enable sddm
+	mkdir -p /etc/sddm.conf.d
+	cat <<-EOF > /etc/sddm.conf.d/kde_settings.conf
 			[Autologin]
 			Relogin=false
 			Session=
@@ -285,22 +261,23 @@ EOF
 			MaximumUid=60513
 			MinimumUid=1000
 EOF
-    systemctl enable bluetooth
-elif [[ $desktopEnvironment == "gnome" ]]; then
-    echo -e "\n[INFO] -- Installing GNOME..."
-    pacman -S --noconfirm gnome
-    systemctl enable gdm
-fi
-sed -i '/^'$username'/d' /etc/sudoers
+		systemctl enable bluetooth
+	elif [[ "${desktopEnvironment}" == "gnome" ]]; then
+		log info "Installing GNOME..."
+		pacman -S --noconfirm gnome
+		systemctl enable gdm
+	fi
+	sed -i '/^'"${username}'/d' /etc/sudoers
 
-echo -e "\n[INFO] -- Taking initial snapshot..."
-name="root-$(date +%Y%m%d%H%M%S)"
-btrfs su snapshot -r / /.snapshots/\$name
-echo -e "\n[INFO] -- Configuring systemd-boot snapshot entry..."
-echo -e "title Arch Linux (\$name)\nlinux /vmlinuz-linux\ninitrd /$ucodePackage.img\ninitrd /initramfs-linux.img\noptions cryptdevice=UUID=$(blkid -s UUID -o value $rootPartition):root root=/dev/mapper/root rootflags=subvol=@snapshots/\$name ro" > /boot/loader/entries/\$name.conf
+	log info "Taking initial snapshot"
+	name="root-\$(date +%Y%m%d%H%M%S)"
+	btrfs su snapshot -r / /.snapshots/\$name
+
+	log info "Configuring systemd-boot snapshot entry"
+	echo -e "title Arch Linux (\$name)\nlinux /vmlinuz-linux\ninitrd /${ucodePackage}.img\ninitrd /initramfs-linux.img\noptions cryptdevice=UUID=$(blkid -s UUID -o value "${rootPartition}"):root root=/dev/mapper/root rootflags=subvol=@snapshots/\$name ro" > /boot/loader/entries/\$name.conf
 EOT
 
-echo -e "\n[INFO] -- Installing pacman hook for systemd-boot upgrade..."
+log info "Installing pacman hook for systemd-boot upgrade"
 mkdir -p /mnt/etc/pacman.d/hooks
 cat <<-EOT >/mnt/etc/pacman.d/hooks/95-systemd-boot.hook
 	[Trigger]
@@ -314,7 +291,7 @@ cat <<-EOT >/mnt/etc/pacman.d/hooks/95-systemd-boot.hook
 	Exec = /usr/bin/systemctl restart systemd-boot-update.service
 EOT
 
-echo -e "\n[INFO] -- Installing snapshotting script..."
+log info "Installing snapshotting script"
 cat <<-'EOT' >/mnt/usr/local/bin/btsnap
 	#!/bin/bash
 
@@ -387,7 +364,7 @@ cat <<-'EOT' >/mnt/usr/local/bin/btsnap
 EOT
 chmod +x /mnt/usr/local/bin/btsnap
 
-echo -e "\n[INFO] -- Installing pacman snapshot hook..."
+log info "Installing pacman snapshot hook"
 cat <<-'EOT' >/mnt/etc/pacman.d/hooks/99-btrfs-snap.hook
 	[Trigger]
 	Operation = Upgrade
